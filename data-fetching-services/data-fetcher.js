@@ -27,7 +27,7 @@ let db;
 const connectToMongoDB = async () => {
   try {
     await client.connect();
-    db = client.db("microservices");
+    db = client.db("DAIM-db");
     console.log("Connected to MongoDB");
   } catch (error) {
     console.error("Error connecting to MongoDB:", error.message);

@@ -4,15 +4,20 @@ import { Octokit } from "@octokit/rest";
 import { Parser } from "json2csv";
 import yaml from "js-yaml";
 import dotenv from "dotenv";
+// import mongodb from "mongodb";
+
+
+// // MongoDB Connection URL
+const mongoURL = process.env.MONGO_URL;
+console.log("MongoDB URL:", mongoURL ? "Found" : "Not found");
 
 // Load environment variables from .env file
 dotenv.config();
 
 // GitHub Token
 const githubToken = process.env.GH_TOKEN_SS;
-
-
 console.log("GitHub Token:", githubToken ? "Found" : "Not found");
+
 
 // Create Octokit instance
 const octokit = new Octokit({
@@ -96,18 +101,18 @@ const analyzeReadme = (content) => {
   return containsMicroservices && containsDatabase;
 };
 
-// Function to analyze Dockerfile or YAML content for services and databases
-const analyzeDockerfile = (content) => {
+// Function to analyze DockerCompose File or YAML content for services and databases
+const analyzeDockerComposeFile = (content,numService) => {
   try {
     const parsedYaml = yaml.load(content);
     if (parsedYaml && parsedYaml.services) {
       const services = Object.keys(parsedYaml.services);
-      if (services.length >= 3) {
+      if (services.length >= numService) {
         const databaseKeywords = [
           "postgres", "mysql", "mariadb", "mongodb", "redis", "cassandra", "cockroachdb",
           "neo4j", "dynamodb", "oracle", "mssql", "db2", "sqlite", "timescaledb", "influxdb",
           "etcd", "tarantool", "couchbase", "couchdb", "tidb", "clickhouse", "opensearch",
-          "elasticsearch", "solr", "hbase",
+          "elasticsearch", "solr", "hbase"
         ];
         return services.some((service) => {
           const image = parsedYaml.services[service]?.image || "";
@@ -208,7 +213,9 @@ const mineMicroservices = async () => {
     { query: "filename:README.md microservices", type: "README" },
   ];
 
-  for (const sizeRange of generateSizeRanges(maxSize, step)) {
+  const sizeRanges = generateSizeRanges(maxSize, step);
+
+  for (const sizeRange of sizeRanges) {
     for (const { query, type } of queries) {
       let page = 1;
       let hasMoreResults = true;
@@ -235,7 +242,7 @@ const mineMicroservices = async () => {
           if (type === "README" && content) {
             isMicroservices = analyzeReadme(content);
           } else if (type === "YAML" && content) {
-            isMicroservices = analyzeDockerfile(content);
+            isMicroservices = analyzeDockerComposeFile(content,3);
           }
 
           if (isMicroservices) {
@@ -244,7 +251,6 @@ const mineMicroservices = async () => {
               console.log(`Skipping ${owner}/${repo} as it does not have at least two folders.`);
               continue;
             }
-
             const metadata = await fetchRepoMetadata(owner, repo);
             appendToCSV(
               {
@@ -265,7 +271,6 @@ const mineMicroservices = async () => {
             console.log(`Project is not microservices: ${item.repository.full_name}`);
           }
         }
-
         page++;
       }
     }

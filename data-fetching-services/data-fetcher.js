@@ -4,14 +4,16 @@
  * When the rate limit is hit, it switches to the next token. 
  * 
  */
-
+import { MongoClient } from "mongodb";
 import fs from "fs";
 import path from "path";
 import { Octokit } from "@octokit/rest";
 import { Parser } from "json2csv";
 import yaml from "js-yaml";
 import dotenv from "dotenv";
-// import mongodb from "mongodb";
+// Load environment variables from .env file
+dotenv.config();
+
 
 
 // // MongoDB Connection URL
@@ -21,19 +23,22 @@ console.log("MongoDB URL:", mongoURL ? "Found" : "Not found");
 const client = new MongoClient(mongoURL);
 let db;
 
-const connectDB = async () => {
+// Connect to MongoDB
+const connectToMongoDB = async () => {
   try {
     await client.connect();
-    db = client.db("microservicesDB");
+    db = client.db("microservices");
     console.log("Connected to MongoDB");
   } catch (error) {
-    console.error("Error connecting to MongoDB:", error);
-    process.exit(1);
+    console.error("Error connecting to MongoDB:", error.message);
   }
 };
 
+connectToMongoDB();
+
 const saveQueryMetadata = async (query, sizeRange, page, resultsCount, totalPages) => {
   try {
+    // connect to MongoDB
     const collection = db.collection("performed_queries");
     await collection.insertOne({ query, sizeRange, page, resultsCount, totalPages, timestamp: new Date() });
     console.log(`Query metadata saved: ${query}, size range ${sizeRange}, page ${page}, results: ${resultsCount}, total pages: ${totalPages}`);
@@ -62,8 +67,7 @@ const saveToMongoDB = async (data) => {
   }
 };
 
-// Load environment variables from .env file
-dotenv.config();
+
 
 // Load all GH tokens from environment variables
 const githubTokens = Object.entries(process.env)

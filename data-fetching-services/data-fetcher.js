@@ -203,14 +203,17 @@ const generateSizeRanges = (maxSize, step) => {
 // Main function to mine repositories for microservices
 const mineMicroservices = async () => {
   console.log("Searching for repositories with potential microservices...");
-
   const step = 1; // Increment in KB
   const maxSize = 5000; // Max size in KB
   const outputPath = path.resolve("./microservices_results_3.csv");
 
   const queries = [
-    // { query: "filename:docker-compose.yml services", type: "YAML" },
-    { query: "justtestingreadme732567628376e927", type: "README" },
+    { query: "filename:docker-compose.yml services", type: "YAML" },
+    { query: "microservices OR microservice OR micro-services OR micro-service", type: "README" }, 
+    // { query: "microservice", type: "README" },
+    // { query: "micro-services", type: "README" },
+    // { query: "micro-service", type: "README" },// TODO: Verify if this query is correctly working 
+    // TODO: If possible to look in title or repo description and labels 
   ];
 
   const sizeRanges = generateSizeRanges(maxSize, step);
@@ -255,7 +258,6 @@ const mineMicroservices = async () => {
             appendToCSV(
               {
                 repository: item.repository.full_name,
-                
                 url: item.repository.html_url,
                 file_type: type,
                 file_path: filePath,
@@ -266,8 +268,8 @@ const mineMicroservices = async () => {
                 creation_date: metadata.creation_date,
                 last_update_date: metadata.last_update_date,
                 // TODO: add language
-                // which db was found ot be used in that repo
-                // what is the inclusion criteria
+                // TODO: add which db was found ot be used in that repo
+                // TODO: what is the inclusion criteria
               },
               outputPath
             );

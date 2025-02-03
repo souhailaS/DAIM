@@ -3,5 +3,7 @@
 - dockerize the scripts
 - improve the logging (log queries, log pages, log entries)
 - handle the case of more than 1000 results 
+- save the readme and the dockerfile contents separately
+- complete the cloning service
 
 

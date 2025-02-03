@@ -209,8 +209,8 @@ const mineMicroservices = async () => {
   const outputPath = path.resolve("./microservices_results_3.csv");
 
   const queries = [
-    { query: "filename:docker-compose.yml services", type: "YAML" },
-    { query: "filename:README.md microservices", type: "README" },
+    // { query: "filename:docker-compose.yml services", type: "YAML" },
+    { query: "justtestingreadme732567628376e927", type: "README" },
   ];
 
   const sizeRanges = generateSizeRanges(maxSize, step);
@@ -255,6 +255,7 @@ const mineMicroservices = async () => {
             appendToCSV(
               {
                 repository: item.repository.full_name,
+                
                 url: item.repository.html_url,
                 file_type: type,
                 file_path: filePath,
@@ -264,6 +265,9 @@ const mineMicroservices = async () => {
                 contributors: metadata.contributors,
                 creation_date: metadata.creation_date,
                 last_update_date: metadata.last_update_date,
+                // TODO: add language
+                // which db was found ot be used in that repo
+                // what is the inclusion criteria
               },
               outputPath
             );

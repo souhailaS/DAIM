@@ -1,3 +1,10 @@
+/**
+ *
+ * The script supports multiple GitHub tokens to avoid rate limiting. 
+ * When the rate limit is hit, it switches to the next token. 
+ * 
+ */
+
 import fs from "fs";
 import path from "path";
 import { Octokit } from "@octokit/rest";
@@ -11,35 +18,96 @@ import dotenv from "dotenv";
 const mongoURL = process.env.MONGO_URL;
 console.log("MongoDB URL:", mongoURL ? "Found" : "Not found");
 
+const client = new MongoClient(mongoURL);
+let db;
+
+const connectDB = async () => {
+  try {
+    await client.connect();
+    db = client.db("microservicesDB");
+    console.log("Connected to MongoDB");
+  } catch (error) {
+    console.error("Error connecting to MongoDB:", error);
+    process.exit(1);
+  }
+};
+
+const saveQueryMetadata = async (query, sizeRange, page, resultsCount, totalPages) => {
+  try {
+    const collection = db.collection("performed_queries");
+    await collection.insertOne({ query, sizeRange, page, resultsCount, totalPages, timestamp: new Date() });
+    console.log(`Query metadata saved: ${query}, size range ${sizeRange}, page ${page}, results: ${resultsCount}, total pages: ${totalPages}`);
+  } catch (error) {
+    console.error("Error saving query metadata:", error.message);
+  }
+};
+
+// const saveSizeAndPage = async (sizeRange, page) => {
+//   try {
+//     const collection = db.collection("size_page_tracking");
+//     await collection.insertOne({ sizeRange, page, timestamp: new Date() });
+//     console.log(`Stored size range ${sizeRange} and page ${page}`);
+//   } catch (error) {
+//     console.error("Error storing size range and page:", error.message);
+//   }
+// };
+
+const saveToMongoDB = async (data) => {
+  try {
+    const collection = db.collection("microservices");
+    await collection.insertOne(data);
+    console.log(`Inserted into MongoDB: ${data.repository}`);
+  } catch (error) {
+    console.error("Error inserting into MongoDB:", error.message);
+  }
+};
+
 // Load environment variables from .env file
 dotenv.config();
 
-// GitHub Token
-const githubToken = process.env.GH_TOKEN_SS;
-console.log("GitHub Token:", githubToken ? "Found" : "Not found");
+// Load all GH tokens from environment variables
+const githubTokens = Object.entries(process.env)
+  .filter(([key]) => key.startsWith("GH_TOKEN_"))
+  .map(([, value]) => value)
+  .filter(Boolean);
+
+if (githubTokens.length === 0) {
+  console.error("No GitHub tokens found in the environment variables.");
+  process.exit(1);
+}
 
 
-// Create Octokit instance
-const octokit = new Octokit({
-  auth: githubToken,
-  userAgent: "octokit/rest.js v18",
-});
+console.log(`Loaded ${githubTokens.length} GitHub tokens.`);
 
-// Function to fetch rate limit and wait if necessary
+let currentTokenIndex = 0;
+const getOctokitInstance = () => {
+  return new Octokit({
+    auth: githubTokens[currentTokenIndex],
+    userAgent: "octokit/rest.js v18",
+  });
+};
+
+let octokit = getOctokitInstance();
+
+// Function to switch tokens
+const switchToken = () => {
+  currentTokenIndex = (currentTokenIndex + 1) % githubTokens.length;
+  octokit = getOctokitInstance();
+  console.log(`Switched to token index ${currentTokenIndex}`);
+};
+
+// Function to check rate limit and switch tokens if necessary
 const checkRateLimit = async (threshold = 10) => {
   try {
     const { data } = await octokit.rateLimit.get();
-    const { limit, remaining, reset } = data.rate;
-    const resetTime = new Date(reset * 1000).toLocaleString();
-
-    console.log(`Rate Limit: ${remaining}/${limit}`);
-    console.log(`Reset Time: ${resetTime}`);
-
-    // If remaining API calls are below the threshold, wait until reset
+    const { remaining, reset } = data.rate;
+    
+    console.log(`Rate Limit: ${remaining}/${data.rate.limit}`);
+    console.log(`Reset Time: ${new Date(reset * 1000).toLocaleString()}`);
+    
     if (remaining <= threshold) {
-      const waitTime = reset * 1000 - Date.now();
-      console.log(`Approaching rate limit. Waiting ${Math.ceil(waitTime / 1000)} seconds...`);
-      await new Promise((resolve) => setTimeout(resolve, waitTime));
+      console.log("Approaching rate limit, switching token...");
+      switchToken();
     }
   } catch (error) {
     console.error("Error checking rate limit:", error.message);
@@ -55,6 +123,7 @@ const searchRepositories = async (query, sizeRange, page = 1) => {
       per_page: 100,
       page,
     });
+    await saveQueryMetadata(query, sizeRange, page, data.total_count, Math.ceil(data.total_count / 100));
     return data.items || [];
   } catch (error) {
     if (error.status === 403) {
@@ -244,10 +313,9 @@ const mineMicroservices = async () => {
           let isMicroservices = false;
           if (type === "README" && content) {
             isMicroservices = analyzeReadme(content);
-          } else if (type === "YAML" && content) {
+          } else if (type === "DOCKER-COMPOSE" && content) {
             isMicroservices = analyzeDockerComposeFile(content,3);
           }
-
           if (isMicroservices) {
             const hasCode = await hasCodeStructure(owner, repo);
             if (!hasCode) {
@@ -255,24 +323,14 @@ const mineMicroservices = async () => {
               continue;
             }
             const metadata = await fetchRepoMetadata(owner, repo);
-            appendToCSV(
-              {
-                repository: item.repository.full_name,
-                url: item.repository.html_url,
-                file_type: type,
-                file_path: filePath,
-                repo_size_range: sizeRange,
-                stars: metadata.stars,
-                commits: metadata.commits,
-                contributors: metadata.contributors,
-                creation_date: metadata.creation_date,
-                last_update_date: metadata.last_update_date,
-                // TODO: add language
-                // TODO: add which db was found ot be used in that repo
-                // TODO: what is the inclusion criteria
-              },
-              outputPath
-            );
+            const data = {
+              repository_metadata: metadata,
+              url: item.repository.html_url,
+              file_type: type,
+              file_path: filePath,
+              repo_size_range: sizeRange,
+            };
+            await saveToMongoDB(data);
           } else {
             console.log(`Project is not microservices: ${item.repository.full_name}`);
           }
@@ -282,6 +340,5 @@ const mineMicroservices = async () => {
     }
   }
 };
-
 // Run the script
 mineMicroservices();

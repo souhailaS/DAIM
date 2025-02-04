@@ -5,5 +5,8 @@
 - handle the case of more than 1000 results 
 - save the readme and the dockerfile contents separately
 - complete the cloning service
+- to the saved data add:  // TODO: add languages of repository
+                // TODO: add which db was found ot be used in that repo
+                // TODO: what is the inclusion criteria
 
 

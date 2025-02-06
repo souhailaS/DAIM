@@ -15,6 +15,8 @@ import {
   saveQueryMetadata,
   saveQueryResult,
 } from "./db-connector.js";
+import { analyzeReadme, analyzeDockerComposeFile, hasCodeStructure } from "./heuristics-verifier.js";
+import { generateSizeRanges } from "./utils.js";
 import { DATABASE_KEYWORDS, GITHUB_TOKENS } from "./constants.js";
 
 const db = await connectToMongoDB();
@@ -102,38 +104,6 @@ const fetchFileContent = async (owner, repo, path) => {
   }
 };
 
-// Updated function to analyze README.md content for "microservices" and database terms
-const analyzeReadme = (content) => {
-  const containsMicroservices = /micro[-]?service(s)?/i.test(
-    content.toLowerCase()
-  );
-  const containsDatabase = DATABASE_KEYWORDS.some((keyword) =>
-    contentLowerCase.includes(keyword)
-  );
-  return containsMicroservices && containsDatabase;
-};
-
-// Function to analyze DockerCompose File or YAML content for services and databases
-const analyzeDockerComposeFile = (content, numService) => {
-  try {
-    const parsedYaml = yaml.load(content);
-    if (parsedYaml && parsedYaml.services) {
-      const services = Object.keys(parsedYaml.services);
-      if (services.length >= numService) {
-        return services.some((service) => {
-          const image = parsedYaml.services[service]?.image || "";
-          return DATABASE_KEYWORDS.some((keyword) =>
-            image.toLowerCase().includes(keyword)
-          );
-        });
-      }
-    }
-  } catch (error) {
-    logger.error("Error parsing YAML:", error.message);
-  }
-  return false;
-};
-
 // Function to fetch repository metadata (stars, commits, contributors, creation date, last update date)
 const fetchRepoMetadata = async (owner, repo) => {
   try {
@@ -175,30 +145,6 @@ const fetchRepoMetadata = async (owner, repo) => {
       last_update_date: "N/A",
     };
   }
-};
-
-// Function to check if the repository has at least two folders
-const hasCodeStructure = async (owner, repo) => {
-  try {
-    const { data } = await octokit.repos.getContent({ owner, repo, path: "" });
-    const folders = data.filter((item) => item.type === "dir");
-    return folders.length >= 2;
-  } catch (error) {
-    logger.error(
-      `Error fetching repository content for ${owner}/${repo}:`,
-      error.message
-    );
-    return false;
-  }
-};
-
-// Generate size ranges with dynamic increments
-const generateSizeRanges = (maxSize, step) => {
-  const ranges = [];
-  for (let i = 800; i < maxSize; i += step) {
-    ranges.push(`${i}..${i + step - 1}`);
-  }
-  return ranges;
 };
 
 // Main function to mine repositories for microservices

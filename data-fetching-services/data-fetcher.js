@@ -1,92 +1,27 @@
 /**
+ * @souhailaS
  *
- * The script supports multiple GitHub tokens to avoid rate limiting. 
- * When the rate limit is hit, it switches to the next token. 
- * 
+ * The script supports multiple GitHub tokens to avoid rate limiting.
+ * When the rate limit is hit, it switches to the next token.
+ *
  */
-import { MongoClient } from "mongodb";
-import fs from "fs";
 import path from "path";
 import { Octokit } from "@octokit/rest";
-import { Parser } from "json2csv";
 import yaml from "js-yaml";
-import dotenv from "dotenv";
-// Load environment variables from .env file
-dotenv.config();
 
+import {
+  connectToMongoDB,
+  saveQueryMetadata,
+  saveQueryResult,
+} from "./db-connector.js";
+import { DATABASE_KEYWORDS, GITHUB_TOKENS } from "./constants.js";
 
-
-// // MongoDB Connection URL
-const mongoURL = process.env.MONGO_URL;
-console.log("MongoDB URL:", mongoURL ? "Found" : "Not found");
-
-const client = new MongoClient(mongoURL);
-let db;
-
-// Connect to MongoDB
-const connectToMongoDB = async () => {
-  try {
-    await client.connect();
-    db = client.db("DAIM-db");
-    console.log("Connected to MongoDB");
-  } catch (error) {
-    console.error("Error connecting to MongoDB:", error.message);
-  }
-};
-
-connectToMongoDB();
-
-const saveQueryMetadata = async (query, sizeRange, page, resultsCount, totalPages) => {
-  try {
-    // connect to MongoDB
-    const collection = db.collection("performed_queries");
-    await collection.insertOne({ query, sizeRange, page, resultsCount, totalPages, timestamp: new Date() });
-    console.log(`Query metadata saved: ${query}, size range ${sizeRange}, page ${page}, results: ${resultsCount}, total pages: ${totalPages}`);
-  } catch (error) {
-    console.error("Error saving query metadata:", error.message);
-  }
-};
-
-// const saveSizeAndPage = async (sizeRange, page) => {
-//   try {
-//     const collection = db.collection("size_page_tracking");
-//     await collection.insertOne({ sizeRange, page, timestamp: new Date() });
-//     console.log(`Stored size range ${sizeRange} and page ${page}`);
-//   } catch (error) {
-//     console.error("Error storing size range and page:", error.message);
-//   }
-// };
-
-const saveToMongoDB = async (data) => {
-  try {
-    const collection = db.collection("microservices");
-    await collection.insertOne(data);
-    console.log(`Inserted into MongoDB: ${data.repository}`);
-  } catch (error) {
-    console.error("Error inserting into MongoDB:", error.message);
-  }
-};
-
-
-
-// Load all GH tokens from environment variables
-const githubTokens = Object.entries(process.env)
-  .filter(([key]) => key.startsWith("GH_TOKEN_"))
-  .map(([, value]) => value)
-  .filter(Boolean);
-
-if (githubTokens.length === 0) {
-  console.error("No GitHub tokens found in the environment variables.");
-  process.exit(1);
-}
-
-
-console.log(`Loaded ${githubTokens.length} GitHub tokens.`);
+const db = await connectToMongoDB();
 
 let currentTokenIndex = 0;
 const getOctokitInstance = () => {
   return new Octokit({
-    auth: githubTokens[currentTokenIndex],
+    auth: GITHUB_TOKENS[currentTokenIndex],
     userAgent: "octokit/rest.js v18",
   });
 };
@@ -95,7 +30,7 @@ let octokit = getOctokitInstance();
 
 // Function to switch tokens
 const switchToken = () => {
-  currentTokenIndex = (currentTokenIndex + 1) % githubTokens.length;
+  currentTokenIndex = (currentTokenIndex + 1) % GITHUB_TOKENS.length;
   octokit = getOctokitInstance();
   console.log(`Switched to token index ${currentTokenIndex}`);
 };
@@ -105,10 +40,10 @@ const checkRateLimit = async (threshold = 10) => {
   try {
     const { data } = await octokit.rateLimit.get();
     const { remaining, reset } = data.rate;
-    
+
     console.log(`Rate Limit: ${remaining}/${data.rate.limit}`);
     console.log(`Reset Time: ${new Date(reset * 1000).toLocaleString()}`);
-    
+
     if (remaining <= threshold) {
       console.log("Approaching rate limit, switching token...");
       switchToken();
@@ -127,7 +62,14 @@ const searchRepositories = async (query, sizeRange, page = 1) => {
       per_page: 100,
       page,
     });
-    await saveQueryMetadata(query, sizeRange, page, data.total_count, Math.ceil(data.total_count / 100));
+    await saveQueryMetadata(
+      db,
+      query,
+      sizeRange,
+      page,
+      data.total_count,
+      Math.ceil(data.total_count / 100)
+    );
     return data.items || [];
   } catch (error) {
     if (error.status === 403) {
@@ -151,45 +93,37 @@ const fetchFileContent = async (owner, repo, path) => {
     const content = Buffer.from(data.content, "base64").toString("utf8");
     return content;
   } catch (error) {
-    console.error(`Error fetching file content for ${repo}/${path}:`, error.message);
+    console.error(
+      `Error fetching file content for ${repo}/${path}:`,
+      error.message
+    );
     return null;
   }
 };
 
 // Updated function to analyze README.md content for "microservices" and database terms
 const analyzeReadme = (content) => {
-  const databaseKeywords = [
-    "postgres", "mysql", "mariadb", "mongodb", "redis", "cassandra", "cockroachdb",
-    "neo4j", "dynamodb", "oracle", "mssql", "db2", "sqlite", "timescaledb", "influxdb",
-    "etcd", "tarantool", "couchbase", "couchdb", "tidb", "clickhouse", "opensearch",
-    "elasticsearch", "solr", "hbase",
-  ];
-
-  const contentLowerCase = content.toLowerCase();
-  const containsMicroservices = contentLowerCase.includes("microservices");
-  const containsDatabase = databaseKeywords.some((keyword) =>
+  const containsMicroservices = /micro[-]?service(s)?/i.test(
+    content.toLowerCase()
+  );
+  const containsDatabase = DATABASE_KEYWORDS.some((keyword) =>
     contentLowerCase.includes(keyword)
   );
-
   return containsMicroservices && containsDatabase;
 };
 
 // Function to analyze DockerCompose File or YAML content for services and databases
-const analyzeDockerComposeFile = (content,numService) => {
+const analyzeDockerComposeFile = (content, numService) => {
   try {
     const parsedYaml = yaml.load(content);
     if (parsedYaml && parsedYaml.services) {
       const services = Object.keys(parsedYaml.services);
       if (services.length >= numService) {
-        const databaseKeywords = [
-          "postgres", "mysql", "mariadb", "mongodb", "redis", "cassandra", "cockroachdb",
-          "neo4j", "dynamodb", "oracle", "mssql", "db2", "sqlite", "timescaledb", "influxdb",
-          "etcd", "tarantool", "couchbase", "couchdb", "tidb", "clickhouse", "opensearch",
-          "elasticsearch", "solr", "hbase"
-        ];
         return services.some((service) => {
           const image = parsedYaml.services[service]?.image || "";
-          return databaseKeywords.some((keyword) => image.toLowerCase().includes(keyword));
+          return DATABASE_KEYWORDS.some((keyword) =>
+            image.toLowerCase().includes(keyword)
+          );
         });
       }
     }
@@ -199,38 +133,25 @@ const analyzeDockerComposeFile = (content,numService) => {
   return false;
 };
 
-// Function to append a repository to the CSV file
-const appendToCSV = (data, outputPath) => {
-  const fields = [
-    "repository",
-    "url",
-    "file_type",
-    "file_path",
-    "repo_size_range",
-    "stars",
-    "commits",
-    "contributors",
-    "creation_date",
-    "last_update_date",
-  ];
-  const parser = new Parser({ fields, header: !fs.existsSync(outputPath) });
-  const csv = parser.parse(data);
-
-  fs.appendFileSync(outputPath, csv + "\n", "utf8");
-  console.log(`Appended to CSV: ${data.repository}`);
-};
-
 // Function to fetch repository metadata (stars, commits, contributors, creation date, last update date)
 const fetchRepoMetadata = async (owner, repo) => {
   try {
     const repoData = await octokit.repos.get({ owner, repo });
 
     // Fetch commits count
-    const commitsData = await octokit.repos.listCommits({ owner, repo, per_page: 1 });
+    const commitsData = await octokit.repos.listCommits({
+      owner,
+      repo,
+      per_page: 1,
+    });
     const commitsCount = commitsData.data.length;
 
     // Fetch contributors count
-    const contributorsData = await octokit.repos.listContributors({ owner, repo, per_page: 1 });
+    const contributorsData = await octokit.repos.listContributors({
+      owner,
+      repo,
+      per_page: 1,
+    });
     const contributorsCount = contributorsData.data.length;
 
     return {
@@ -241,7 +162,10 @@ const fetchRepoMetadata = async (owner, repo) => {
       last_update_date: repoData.data.updated_at,
     };
   } catch (error) {
-    console.error(`Error fetching repository metadata for ${owner}/${repo}:`, error.message);
+    console.error(
+      `Error fetching repository metadata for ${owner}/${repo}:`,
+      error.message
+    );
     return {
       stars: 0,
       commits: "N/A",
@@ -259,7 +183,10 @@ const hasCodeStructure = async (owner, repo) => {
     const folders = data.filter((item) => item.type === "dir");
     return folders.length >= 2;
   } catch (error) {
-    console.error(`Error fetching repository content for ${owner}/${repo}:`, error.message);
+    console.error(
+      `Error fetching repository content for ${owner}/${repo}:`,
+      error.message
+    );
     return false;
   }
 };
@@ -282,11 +209,14 @@ const mineMicroservices = async () => {
 
   const queries = [
     { query: "filename:docker-compose.yml services", type: "YAML" },
-    { query: "microservices OR microservice OR micro-services OR micro-service", type: "README" }, 
+    {
+      query: "microservices OR microservice OR micro-services OR micro-service",
+      type: "README",
+    },
     // { query: "microservice", type: "README" },
     // { query: "micro-services", type: "README" },
-    // { query: "micro-service", type: "README" },// TODO: Verify if this query is correctly working 
-    // TODO: If possible to look in title or repo description and labels 
+    // { query: "micro-service", type: "README" },// TODO: Verify if this query is correctly working
+    // TODO: If possible to look in title or repo description and labels
   ];
 
   const sizeRanges = generateSizeRanges(maxSize, step);
@@ -297,7 +227,9 @@ const mineMicroservices = async () => {
       let hasMoreResults = true;
 
       while (hasMoreResults && page <= 10) {
-        console.log(`Fetching ${type} results for size range ${sizeRange}, page ${page}...`);
+        console.log(
+          `Fetching ${type} results for size range ${sizeRange}, page ${page}...`
+        );
         await checkRateLimit();
 
         const searchResults = await searchRepositories(query, sizeRange, page);
@@ -318,12 +250,14 @@ const mineMicroservices = async () => {
           if (type === "README" && content) {
             isMicroservices = analyzeReadme(content);
           } else if (type === "DOCKER-COMPOSE" && content) {
-            isMicroservices = analyzeDockerComposeFile(content,3);
+            isMicroservices = analyzeDockerComposeFile(content, 3);
           }
           if (isMicroservices) {
             const hasCode = await hasCodeStructure(owner, repo);
             if (!hasCode) {
-              console.log(`Skipping ${owner}/${repo} as it does not have at least two folders.`);
+              console.log(
+                `Skipping ${owner}/${repo} as it does not have at least two folders.`
+              );
               continue;
             }
             const metadata = await fetchRepoMetadata(owner, repo);
@@ -334,9 +268,11 @@ const mineMicroservices = async () => {
               file_path: filePath,
               repo_size_range: sizeRange,
             };
-            await saveToMongoDB(data);
+            await saveQueryResult(db, data);
           } else {
-            console.log(`Project is not microservices: ${item.repository.full_name}`);
+            console.log(
+              `Project is not microservices: ${item.repository.full_name}`
+            );
           }
         }
         page++;
@@ -344,5 +280,7 @@ const mineMicroservices = async () => {
     }
   }
 };
+
+
 // Run the script
 mineMicroservices();

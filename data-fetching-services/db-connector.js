@@ -107,5 +107,14 @@ export const saveQueryResult = async (db, data) => {
   }
 };
 
-
-
+// TODO: Implement the function that keeps track of the size range and page number
+// e.g
+// const saveSizeAndPage = async (sizeRange, page) => {
+//   try {
+//     const collection = db.collection("size_page_tracking");
+//     await collection.insertOne({ sizeRange, page, timestamp: new Date() });
+//     console.log(`Stored size range ${sizeRange} and page ${page}`);
+//   } catch (error) {
+//     console.error("Error storing size range and page:", error.message);
+//   }
+// };

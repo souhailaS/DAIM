@@ -8,6 +8,7 @@
 import path from "path";
 import { Octokit } from "@octokit/rest";
 import yaml from "js-yaml";
+import { logger } from "./logger.js";
 
 import {
   connectToMongoDB,
@@ -32,7 +33,7 @@ let octokit = getOctokitInstance();
 const switchToken = () => {
   currentTokenIndex = (currentTokenIndex + 1) % GITHUB_TOKENS.length;
   octokit = getOctokitInstance();
-  console.log(`Switched to token index ${currentTokenIndex}`);
+  logger.info(`Switched to token index ${currentTokenIndex}`);
 };
 
 // Function to check rate limit and switch tokens if necessary
@@ -41,15 +42,15 @@ const checkRateLimit = async (threshold = 10) => {
     const { data } = await octokit.rateLimit.get();
     const { remaining, reset } = data.rate;
 
-    console.log(`Rate Limit: ${remaining}/${data.rate.limit}`);
-    console.log(`Reset Time: ${new Date(reset * 1000).toLocaleString()}`);
+    logger.info(`Rate Limit: ${remaining}/${data.rate.limit}`);
+    logger.info(`Reset Time: ${new Date(reset * 1000).toLocaleString()}`);
 
     if (remaining <= threshold) {
-      console.log("Approaching rate limit, switching token...");
+      logger.info("Approaching rate limit, switching token...");
       switchToken();
     }
   } catch (error) {
-    console.error("Error checking rate limit:", error.message);
+    logger.error("Error checking rate limit:", error.message);
   }
 };
 
@@ -73,11 +74,11 @@ const searchRepositories = async (query, sizeRange, page = 1) => {
     return data.items || [];
   } catch (error) {
     if (error.status === 403) {
-      console.error("Rate limit hit. Waiting...");
+      logger.error("Rate limit hit. Waiting...");
       await checkRateLimit(); // Wait explicitly if rate limit is hit
       return searchRepositories(query, sizeRange, page); // Retry after waiting
     }
-    console.error("Error fetching repositories:", error.message);
+    logger.error("Error fetching repositories:", error.message);
     return [];
   }
 };
@@ -93,7 +94,7 @@ const fetchFileContent = async (owner, repo, path) => {
     const content = Buffer.from(data.content, "base64").toString("utf8");
     return content;
   } catch (error) {
-    console.error(
+    logger.error(
       `Error fetching file content for ${repo}/${path}:`,
       error.message
     );
@@ -128,7 +129,7 @@ const analyzeDockerComposeFile = (content, numService) => {
       }
     }
   } catch (error) {
-    console.error("Error parsing YAML:", error.message);
+    logger.error("Error parsing YAML:", error.message);
   }
   return false;
 };
@@ -162,7 +163,7 @@ const fetchRepoMetadata = async (owner, repo) => {
       last_update_date: repoData.data.updated_at,
     };
   } catch (error) {
-    console.error(
+    logger.error(
       `Error fetching repository metadata for ${owner}/${repo}:`,
       error.message
     );
@@ -183,7 +184,7 @@ const hasCodeStructure = async (owner, repo) => {
     const folders = data.filter((item) => item.type === "dir");
     return folders.length >= 2;
   } catch (error) {
-    console.error(
+    logger.error(
       `Error fetching repository content for ${owner}/${repo}:`,
       error.message
     );
@@ -202,7 +203,7 @@ const generateSizeRanges = (maxSize, step) => {
 
 // Main function to mine repositories for microservices
 const mineMicroservices = async () => {
-  console.log("Searching for repositories with potential microservices...");
+  logger.info("Searching for repositories with potential microservices...");
   const step = 1; // Increment in KB
   const maxSize = 5000; // Max size in KB
   const outputPath = path.resolve("./microservices_results_3.csv");
@@ -227,7 +228,7 @@ const mineMicroservices = async () => {
       let hasMoreResults = true;
 
       while (hasMoreResults && page <= 10) {
-        console.log(
+        logger.info(
           `Fetching ${type} results for size range ${sizeRange}, page ${page}...`
         );
         await checkRateLimit();
@@ -243,7 +244,7 @@ const mineMicroservices = async () => {
           const [owner, repo] = item.repository.full_name.split("/");
           const filePath = item.path;
 
-          console.log(`Analyzing ${type} in ${repo}/${filePath}...`);
+          logger.info(`Analyzing ${type} in ${repo}/${filePath}...`);
           const content = await fetchFileContent(owner, repo, filePath);
 
           let isMicroservices = false;
@@ -255,7 +256,7 @@ const mineMicroservices = async () => {
           if (isMicroservices) {
             const hasCode = await hasCodeStructure(owner, repo);
             if (!hasCode) {
-              console.log(
+              logger.info(
                 `Skipping ${owner}/${repo} as it does not have at least two folders.`
               );
               continue;
@@ -270,7 +271,7 @@ const mineMicroservices = async () => {
             };
             await saveQueryResult(db, data);
           } else {
-            console.log(
+            logger.info(
               `Project is not microservices: ${item.repository.full_name}`
             );
           }
@@ -280,7 +281,6 @@ const mineMicroservices = async () => {
     }
   }
 };
-
 
 // Run the script
 mineMicroservices();

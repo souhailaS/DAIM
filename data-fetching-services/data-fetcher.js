@@ -14,7 +14,7 @@ import {
   saveQueryMetadata,
   saveQueryResult,
 } from "./db-connector.js";
-import { analyzeReadme, analyzeDockerComposeFile, hasCodeStructure } from "./heuristics-verifier.js";
+import { analyzeReadme, analyzeDockerComposeFile } from "./heuristics-verifier.js";
 import { generateSizeRanges } from "./utils.js";
 import { GITHUB_TOKENS } from "./constants.js";
 
@@ -122,6 +122,12 @@ const fetchRepoMetadata = async (owner, repo) => {
       repo,
       per_page: 1,
     });
+
+    const languageData = await octokit.repos.listLanguages({
+      owner,
+      repo,
+    });
+
     const contributorsCount = contributorsData.data.length;
 
     return {
@@ -130,6 +136,7 @@ const fetchRepoMetadata = async (owner, repo) => {
       contributors: contributorsCount,
       creation_date: repoData.data.created_at,
       last_update_date: repoData.data.updated_at,
+      languages: languageData.data,
     };
   } catch (error) {
     logger.error(
@@ -143,6 +150,21 @@ const fetchRepoMetadata = async (owner, repo) => {
       creation_date: "N/A",
       last_update_date: "N/A",
     };
+  }
+};
+
+// Function to check if the repository has at least two folders
+export const hasCodeStructure = async (owner, repo) => {
+  try {
+    const { data } = await octokit.repos.getContent({ owner, repo, path: "" });
+    const folders = data.filter((item) => item.type === "dir");
+    return folders.length >= 2;
+  } catch (error) {
+    logger.error(
+      `Error fetching repository content for ${owner}/${repo}:`,
+      error.message
+    );
+    return false;
   }
 };
 
@@ -168,6 +190,7 @@ const mineMicroservices = async () => {
   for (const sizeRange of sizeRanges) {
     for (const { query, type } of queries) {
       let page = 1;
+      // 
       let hasMoreResults = true;
 
       while (hasMoreResults && page <= 10) {
@@ -193,7 +216,7 @@ const mineMicroservices = async () => {
           let isMicroservices = false;
           if (type === "README" && content) {
             isMicroservices = analyzeReadme(content);
-          } else if (type === "DOCKER-COMPOSE" && content) {
+          } else if (type === "YAML" && content) {
             isMicroservices = analyzeDockerComposeFile(content, 3);
           }
           if (isMicroservices) {
@@ -208,7 +231,7 @@ const mineMicroservices = async () => {
             const data = {
               repository_metadata: metadata,
               url: item.repository.html_url,
-              file_type: type,
+              detector_type: type,
               file_path: filePath,
               repo_size_range: sizeRange,
             };

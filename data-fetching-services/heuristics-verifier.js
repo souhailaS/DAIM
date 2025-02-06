@@ -1,5 +1,6 @@
 import { DATABASE_KEYWORDS } from "./constants.js";
 import yaml from "js-yaml";
+import { logger } from "./logger.js"; 
 
 // Updated function to analyze README.md content for "microservices" and database terms
 export const analyzeReadme = (content) => {
@@ -33,17 +34,4 @@ export const analyzeDockerComposeFile = (content, numService) => {
   return false;
 };
 
-// Function to check if the repository has at least two folders
-export const hasCodeStructure = async (owner, repo) => {
-  try {
-    const { data } = await octokit.repos.getContent({ owner, repo, path: "" });
-    const folders = data.filter((item) => item.type === "dir");
-    return folders.length >= 2;
-  } catch (error) {
-    logger.error(
-      `Error fetching repository content for ${owner}/${repo}:`,
-      error.message
-    );
-    return false;
-  }
-};
+

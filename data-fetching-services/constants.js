@@ -1,3 +1,4 @@
+import { logger } from "./logger.js";
 import dotenv from "dotenv";
 // Load environment variables from .env file
 dotenv.config();
@@ -37,9 +38,9 @@ export const GITHUB_TOKENS = Object.entries(process.env)
   .map(([, value]) => value)
   .filter(Boolean);
 
-if (githubTokens.length === 0) {
-  console.error("No GitHub tokens found in the environment variables.");
+if ( GITHUB_TOKENS.length === 0) {
+  logger.error("No GitHub tokens found in the environment variables.");
   process.exit(1);
 }
 
-console.log(`Loaded ${githubTokens.length} GitHub tokens.`);
+logger.info(`Loaded ${GITHUB_TOKENS.length} GitHub tokens.`);

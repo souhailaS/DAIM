@@ -45,9 +45,6 @@ export const saveQueryMetadata = async (db, query, sizeRange, page, resultsCount
     if (!query || typeof query !== "string") {
       throw new Error("Invalid query parameter");
     }
-    if (!Array.isArray(sizeRange)) {
-      throw new Error("Invalid sizeRange parameter");
-    }
     if (typeof page !== "number" || page < 1) {
       throw new Error("Invalid page parameter");
     }
@@ -92,9 +89,6 @@ export const saveQueryResult = async (db, data) => {
     if (!data || typeof data !== "object") {
       throw new Error("Invalid data: must be a non-null object");
     }
-    if (!data.repository) {
-      throw new Error("Invalid data: 'repository' field is required");
-    }
 
     const collection = db.collection("microservices");
     await collection.insertOne(data);
@@ -129,7 +123,7 @@ export const saveSizeAndPage = async (db, sizeRange, page) => {
 
     const collection = db.collection("size_page_tracking");
 
-    // Insert document into the collection
+    // TODO: Change to update
     await collection.insertOne({ sizeRange, page, timestamp: new Date() });
 
     logger.info(`Stored size range: ${sizeRange}, page: ${page}`);

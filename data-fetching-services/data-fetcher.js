@@ -7,7 +7,6 @@
  */
 import path from "path";
 import { Octokit } from "@octokit/rest";
-import yaml from "js-yaml";
 import { logger } from "./logger.js";
 
 import {
@@ -17,7 +16,7 @@ import {
 } from "./db-connector.js";
 import { analyzeReadme, analyzeDockerComposeFile, hasCodeStructure } from "./heuristics-verifier.js";
 import { generateSizeRanges } from "./utils.js";
-import { DATABASE_KEYWORDS, GITHUB_TOKENS } from "./constants.js";
+import { GITHUB_TOKENS } from "./constants.js";
 
 const db = await connectToMongoDB();
 
@@ -152,8 +151,6 @@ const mineMicroservices = async () => {
   logger.info("Searching for repositories with potential microservices...");
   const step = 1; // Increment in KB
   const maxSize = 5000; // Max size in KB
-  const outputPath = path.resolve("./microservices_results_3.csv");
-
   const queries = [
     { query: "filename:docker-compose.yml services", type: "YAML" },
     {

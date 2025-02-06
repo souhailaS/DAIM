@@ -1,3 +1,6 @@
+import { DATABASE_KEYWORDS } from "./constants.js";
+import yaml from "js-yaml";
+
 // Updated function to analyze README.md content for "microservices" and database terms
 export const analyzeReadme = (content) => {
   const containsMicroservices = /micro[-]?service(s)?/i.test(
@@ -44,4 +47,3 @@ export const hasCodeStructure = async (owner, repo) => {
     return false;
   }
 };
-
